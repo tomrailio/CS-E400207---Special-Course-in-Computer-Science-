@@ -1,0 +1,10 @@
+ffmpeg-python==0.2.0
+hugchat==0.0.6.1
+PyAudio==0.2.13
+sounddevice==0.4.6
+soundfile==0.12.1
+SpeechRecognition==3.10.0
+torch==2.0.1
+torchaudio==2.0.2
+torchvision==0.15.2+cu117
+TTS==0.13.3
