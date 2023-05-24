@@ -10,6 +10,7 @@ import customtkinter
 from PIL import Image
 import pandas as pd
 import threading
+import time
 
 questions = pd.read_csv('QuestionSurvey.csv')
 starting_question = questions.loc[0]['Question']
@@ -32,67 +33,61 @@ customtkinter.set_appearance_mode("dark")  # Modes: system (default), light, dar
 customtkinter.set_default_color_theme("dark-blue")  # Themes: blue (default), dark-blue, green
 
 print('Initializing')
+
+# Needed paths and folders
 recording_folder = 'OutputRecordings'
-transcription_folder = 'OutputTranscription'
 trust_scores_folder = 'OutputTrustScores'
 recording_in_folder = 'InputRecordings'
+final_answer_folder = 'FinalAnswers'
 
-if not os.path.exists(recording_folder):
-   os.makedirs(recording_folder)
+path = "conversation_summary.txt"
+audio_file = 'output.wav'
 
-if not os.path.exists(transcription_folder):
-   os.makedirs(transcription_folder)
+folders = [recording_folder, trust_scores_folder, recording_folder, final_answer_folder]
 
-if not os.path.exists(trust_scores_folder):
-   os.makedirs(trust_scores_folder)
-
-if not os.path.exists(recording_in_folder):
-   os.makedirs(recording_in_folder)
-
-model = whisper.load_model("base")
-chatbot = hugchat.ChatBot(cookie_path="cookies.json")
+for folder in folders:
+    if not os.path.exists(folder):
+       os.makedirs(folder)
 
 # Possible Mic - Run when you run the programm the first time to select the right microphone
 available_mics = sr.Microphone.list_microphone_names()
-mic_index = 1
 
+# 2 for home computer, 1 for uni computer
+mic_index = 2
+
+# If debugging and logging needed
 debug = False
 
+# Initialize Speech Recognizer
 r = sr.Recognizer()
 mic = sr.Microphone(device_index=mic_index)
-audio_file = 'output.wav'
 
-conversation_list = []
-path = "conversation_summary.txt"
-if os.path.isfile(path):
-    with open(path) as f:
-        prior_conversation = f.readlines()
-
+# Initialize Text-to-Speech
+model = whisper.load_model("base")
+chatbot = hugchat.ChatBot(cookie_path="cookies.json")
 
 class App(customtkinter.CTk):
 
-    frames = {"frame1": None, "frame2": None}
+    frames = {"Study_Frame": None, "Talking_Frame": None}
 
-    def stop_event(self):
-        exit()
-
-    def frame1_selector(self):
-        App.frames["frame2"].pack_forget()
-        App.frames["frame1"].pack(in_=self.main_container, side=tkinter.TOP, fill=tkinter.BOTH, expand=True,
+    def study_Frame_selector(self):
+        App.frames['Talking_Frame'].pack_forget()
+        App.frames["Study_Frame"].pack(in_=self.main_container, side=tkinter.TOP, fill=tkinter.BOTH, expand=True,
                                   padx=0, pady=0)
 
-    def frame2_selector(self):
+    def talking_Frame_selector(self):
         self.title("Voice Assistant Example")
         self.geometry(f"{1300}x{1000}")
         self.create_study_frame()
-        App.frames["frame1"].pack_forget()
-        App.frames["frame2"].pack(in_=self.main_container, side=tkinter.TOP, fill=tkinter.BOTH, expand=True,
+        App.frames["Study_Frame"].pack_forget()
+        App.frames['Talking_Frame'].pack(in_=self.main_container, side=tkinter.TOP, fill=tkinter.BOTH, expand=True,
                                   padx=0, pady=0)
 
     def stop_event(self):
         self.stop = 1
+        sd.stop()
 
-    def prior_conversations_event(self, new_appearance_mode: str):
+    def prior_conversations_event(self,):
         id_conv = 2
         text_queue = 2
         text_answer = chatbot.chat(f"This was our prior conversation: {prior_conversation}")
@@ -125,16 +120,15 @@ class App(customtkinter.CTk):
 
         self.textbox.delete("0.0", "end")
         self.textbox.insert("0.0", text=text_answer)
-        filename = 'output_response.wav'
+        filename = os.path.join(recording_folder,  f"output_response_{self.subject_id}_{self.talking_counter}.wav")
         self.textbox_SR.delete("0.0", "end")
         self.textbox_SR.insert("0.0", text=text_queue)
-        tts.tts_to_file(text=text_answer, file_path='output_response.wav')
+        tts.tts_to_file(text=text_answer, file_path=filename)
         data, fs = sf.read(filename, dtype='float32')
         sd.play(data, fs)
-        self.conversation_tracker.append(text_queue)
-        self.conversation_tracker.append(text_answer)
         self.talk_button.configure(text="Talk to the Virtual Assistant")
         self.talk_button.configure(state="normal")
+        self.talking_counter += 1
 
     def submit_event(self):
         self.progress_questions += 1
@@ -142,16 +136,17 @@ class App(customtkinter.CTk):
         self.progressbar_1.set(self.progress_questions / number_questions)
 
         if not debug:
-            with open("OutputTranscription/conversation_summary.txt", "w") as f:
+            with open(os.path.join(final_answer_folder, f"final_answer_{self.subject_id}.txt"), "w") as f:
                 for lines in self.conversation_tracker:
                     f.write(lines)
 
-            with open("OutputTrustScores/TrustScores.txt", "w") as f:
+            with open(os.path.join(trust_scores_folder, f"TrustScores_{self.subject_id}.txt"), "w") as f:
                 f.write(f"{questions.loc[self.progress_questions]['Question'], self.radio_var}")
 
         id = chatbot.new_conversation()
         chatbot.change_conversation(id)
         self.conversation_tracker = []
+        self.talking_counter = 0
 
     def back_event(self):
         self.progress_questions -= 1
@@ -163,10 +158,9 @@ class App(customtkinter.CTk):
 
         with mic as source:
             print("Listening....")
-            #r.adjust_for_ambient_noise(mic, duration=1)
             audio_data = r.listen(source)
 
-        output_file = os.path.join(recording_folder, f"output{self.progress_questions}.wav")
+        output_file = os.path.join(recording_in_folder, f"output_{self.subject_id}_{self.progress_questions}.wav")
         with open(output_file, "wb") as file:
             file.write(audio_data.get_wav_data())
 
@@ -186,12 +180,12 @@ class App(customtkinter.CTk):
         # Confidence Label
         radio_button_size = 15
         progress_questions = 0
-        App.frames["frame2"] = customtkinter.CTkFrame(self, corner_radius=0, width=1300, height=1000)
+        App.frames["Talking_Frame"] = customtkinter.CTkFrame(self, corner_radius=0, width=1300, height=1000)
 
-        App.frames["frame2"].grid_rowconfigure((0, 1), weight=1)
-        App.frames["frame2"].grid_columnconfigure((0, 1, 2, 3, 4, 5), weight=1)
+        App.frames["Talking_Frame"].grid_rowconfigure((0, 1), weight=1)
+        App.frames["Talking_Frame"].grid_columnconfigure((0, 1, 2, 3, 4, 5), weight=1)
 
-        frame = App.frames["frame2"]
+        frame = App.frames['Talking_Frame']
         # create sidebar frame with widgets
         sidebar_frame = customtkinter.CTkFrame(frame, corner_radius=0)
         sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
@@ -322,12 +316,13 @@ class App(customtkinter.CTk):
 
     def __init__(self):
         super().__init__()
+        self.subject_id = '0000'
         self.num_of_frames = 2
         self.stop = 0
         self.radio_var = tkinter.IntVar(value=2)
         self.title("Voice Assistant")
         self.geometry("1300x1000")
-
+        self.talking_counter = 0
         # contains everything
         self.main_container = customtkinter.CTkFrame(self, width=1300, height=1000)
         self.main_container.pack(fill=None, expand=True, padx=10, pady=10)
@@ -336,17 +331,18 @@ class App(customtkinter.CTk):
         #panel.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=True, padx=0, pady=0)
 
         # buttons to select the frames
-        bt_frame1 = customtkinter.CTkButton(self.main_container, text="Just have a conversation \n with HuggingChat", command=self.frame1_selector, width=150, height=128, font=customtkinter.CTkFont(size=20, weight="bold"))
-        bt_frame1.place(relx=0.3, rely=0.5, anchor=tkinter.CENTER)
+        bt_Study_Frame = customtkinter.CTkButton(self.main_container, text="Just have a conversation \n with HuggingChat", command=self.study_Frame_selector, width=150, height=128, font=customtkinter.CTkFont(size=20, weight="bold"))
+        bt_Study_Frame.place(relx=0.3, rely=0.5, anchor=tkinter.CENTER)
 
-        bt_frame2 = customtkinter.CTkButton(self.main_container, text="Start Study Experiment", command=self.frame2_selector, width=150, height=128, font=customtkinter.CTkFont(size=20, weight="bold"))
-        bt_frame2.place(relx=0.7, rely=0.5, anchor=tkinter.CENTER)
+        bt_Talking_Frame = customtkinter.CTkButton(self.main_container, text="Start Study Experiment", command=self.talking_Frame_selector, width=150, height=128, font=customtkinter.CTkFont(size=20, weight="bold"))
+        bt_Talking_Frame.place(relx=0.7, rely=0.5, anchor=tkinter.CENTER)
+        bt_Talking_Frame.configure(state='disable')
 
-        App.frames['frame1'] = customtkinter.CTkFrame(self)
-        bt_from_frame1 = customtkinter.CTkButton(App.frames['frame1'], text="Test 1", command=lambda: print("test 1"))
-        bt_from_frame1.place(relx=0.5, rely=0.5, anchor=tkinter.CENTER)
+        App.frames['Study_Frame'] = customtkinter.CTkFrame(self)
+        bt_from_Study_Frame = customtkinter.CTkButton(App.frames['Study_Frame'], text="Test 1", command=lambda: print("test 1"))
+        bt_from_Study_Frame.place(relx=0.5, rely=0.5, anchor=tkinter.CENTER)
 
-        App.frames['frame2'] = self.create_study_frame()
+        App.frames['Talking_Frame'] = self.create_study_frame()
 
         self.progress_questions = 0
         self.text_queue = ""
