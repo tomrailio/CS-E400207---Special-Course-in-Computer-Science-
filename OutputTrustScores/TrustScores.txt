@@ -1,0 +1,1 @@
+('Number of bones in the human body', <tkinter.IntVar object at 0x000002567717B1C0>)
