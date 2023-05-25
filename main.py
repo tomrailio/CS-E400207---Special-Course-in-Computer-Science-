@@ -11,6 +11,7 @@ from PIL import Image
 import pandas as pd
 import threading
 import time
+import torch
 
 questions = pd.read_csv('QuestionSurvey.csv')
 starting_question = questions.loc[0]['Question']
@@ -53,7 +54,7 @@ for folder in folders:
 available_mics = sr.Microphone.list_microphone_names()
 
 # 2 for home computer, 1 for uni computer
-mic_index = 2
+mic_index = 1
 
 # If debugging and logging needed
 debug = False
@@ -65,6 +66,7 @@ mic = sr.Microphone(device_index=mic_index)
 # Initialize Text-to-Speech
 model = whisper.load_model("base")
 chatbot = hugchat.ChatBot(cookie_path="cookies.json")
+
 
 class App(customtkinter.CTk):
 
@@ -100,6 +102,44 @@ class App(customtkinter.CTk):
             with open("conversation_summary.txt", "w") as f:
                 f.write(text_answer)
 
+    def display_text(self):
+
+        self.textbox_SR.delete("0.0", "end")
+        for character in self.text_queue:
+            self.textbox_SR.insert("end", text=character)
+            time.sleep(0.03)
+
+    def display_response(self):
+        self.textbox.delete("0.0", "end")
+        for character in self.text_answer:
+            self.textbox.insert("end", text=character)
+            time.sleep(0.03)
+
+    def recognition_and_answering(self):
+        self.text_queue = self.recognize()
+
+        self.progressbar_talking.stop()
+        print(f'This is what I heard: {self.text_queue}')
+
+        threading.Thread(target=self.display_text).start()
+
+        self.text_answer = chatbot.chat(self.text_queue)
+
+        print(f'This is my answer: {self.text_answer}')
+        threading.Thread(target=self.display_response).start()
+
+        filename = os.path.join(recording_folder, f"output_response_{self.subject_id}_{self.talking_counter}.wav")
+
+        tts.tts_to_file(text=self.text_answer, file_path=filename)
+        data, fs = sf.read(filename, dtype='float32')
+        sd.play(data, fs)
+
+        self.conversation_tracker.append(self.text_queue)
+        self.conversation_tracker.append(self.text_answer)
+        self.talk_button.configure(text="Talk to the Virtual Assistant")
+        self.talk_button.configure(state="normal")
+        self.talking_counter += 1
+
     def recording_event(self):
 
         self.talk_button.configure(state="disabled")
@@ -107,28 +147,7 @@ class App(customtkinter.CTk):
         self.progressbar_talking.grid(row=0, column=1, columnspan=1, padx=(20, 10), pady=(10, 10), sticky="ew")
         self.progressbar_talking.start()
 
-        text_queue = self.recognize()
-        
-        self.progressbar_talking.stop()
-        print(f'This is what I heard: {text_queue}')
-        self.text_queue = text_queue
-        text_answer = chatbot.chat(text_queue)
-        print(f'This is my answer: {text_answer}')
-
-        self.conversation_tracker.append(text_queue)
-        self.conversation_tracker.append(text_answer)
-
-        self.textbox.delete("0.0", "end")
-        self.textbox.insert("0.0", text=text_answer)
-        filename = os.path.join(recording_folder,  f"output_response_{self.subject_id}_{self.talking_counter}.wav")
-        self.textbox_SR.delete("0.0", "end")
-        self.textbox_SR.insert("0.0", text=text_queue)
-        tts.tts_to_file(text=text_answer, file_path=filename)
-        data, fs = sf.read(filename, dtype='float32')
-        sd.play(data, fs)
-        self.talk_button.configure(text="Talk to the Virtual Assistant")
-        self.talk_button.configure(state="normal")
-        self.talking_counter += 1
+        threading.Thread(target=self.recognition_and_answering).start()
 
     def submit_event(self):
         self.progress_questions += 1
@@ -141,12 +160,13 @@ class App(customtkinter.CTk):
                     f.write(lines)
 
             with open(os.path.join(trust_scores_folder, f"TrustScores_{self.subject_id}.txt"), "w") as f:
-                f.write(f"{questions.loc[self.progress_questions]['Question'], self.radio_var}")
+                f.write(f"{questions.loc[self.progress_questions]['Question'], self.radio_var.get()}")
 
         id = chatbot.new_conversation()
         chatbot.change_conversation(id)
         self.conversation_tracker = []
         self.talking_counter = 0
+        self.entry.configure(placeholder_text="Type your answer here")
 
     def back_event(self):
         self.progress_questions -= 1
@@ -163,7 +183,7 @@ class App(customtkinter.CTk):
         output_file = os.path.join(recording_in_folder, f"output_{self.subject_id}_{self.progress_questions}.wav")
         with open(output_file, "wb") as file:
             file.write(audio_data.get_wav_data())
-
+        #output_file = "InputRecordings/output_0000_0.wav"
         audio = whisper.load_audio(output_file)
         audio = whisper.pad_or_trim(audio)
 
@@ -210,7 +230,7 @@ class App(customtkinter.CTk):
                                             font=customtkinter.CTkFont(size=15, weight="bold"))
         voicelabel.grid(row=1, column=0, padx=20, pady=(10, 10), sticky='w')
 
-        self.textbox = customtkinter.CTkTextbox(assistant_answer, width=250)
+        self.textbox = customtkinter.CTkTextbox(assistant_answer, width=250, wrap="word")
         self.textbox.grid(row=2, column=0, padx=(20, 20), pady=(10, 10), sticky="nsew")
 
         # create radiobutton frame
@@ -264,8 +284,8 @@ class App(customtkinter.CTk):
                                             font=customtkinter.CTkFont(size=15, weight="bold"))
         yourAnswer.grid(row=0, column=0, padx=(20, 20), pady=(10, 10), sticky='w')
 
-        entry = customtkinter.CTkEntry(user_frame, placeholder_text="Type your final answer here")
-        entry.grid(row=1, column=0, columnspan=2, padx=(20, 20), pady=(10, 10), sticky="nsew")
+        self.entry = customtkinter.CTkEntry(user_frame, placeholder_text="Type your final answer here")
+        self.entry.grid(row=1, column=0, columnspan=2, padx=(20, 20), pady=(10, 10), sticky="nsew")
 
         # Submission Button
         submit_button = customtkinter.CTkButton(text="Submit", master=frame, border_width=2, command=self.submit_event)
@@ -288,7 +308,7 @@ class App(customtkinter.CTk):
 
         self.talk_button = customtkinter.CTkButton(frame, text="Talk to the Virtual Assistant",
                                               font=customtkinter.CTkFont(size=15, weight="bold"), image=mic_image, height=75,
-                                              command=threading.Thread(target=self.recording_event).start)
+                                              command=self.recording_event)
 
         self.talk_button.grid(row=1, column=1, rowspan=1, padx=(20, 20), pady=(20, 20), sticky="nsew")
 
@@ -306,7 +326,7 @@ class App(customtkinter.CTk):
                                             font=customtkinter.CTkFont(size=15, weight="bold"))
         voicelabel.grid(row=0, column=1, padx=20, pady=(10, 10), sticky='nw')
 
-        self.textbox_SR = customtkinter.CTkTextbox(recognized_speech, width=50)
+        self.textbox_SR = customtkinter.CTkTextbox(recognized_speech, width=50, wrap="word")
         self.textbox_SR.grid(row=1, column=1, padx=(20, 20), pady=(20, 0), sticky="nsew")
 
         # set default values
