@@ -19,8 +19,7 @@ from time import sleep
 import numpy as np
 import random
 
-
-questions = pd.read_csv('QuestionSurvey.csv')
+questions = pd.read_csv('QuestionSurvey_2.csv')
 starting_question = questions.loc[0]['Question']
 number_questions = len(questions.index)
 
@@ -35,7 +34,8 @@ headers = {
 
 model_name = TTS.list_models()[8]
 
-tts = TTS(model_name=model_name, progress_bar=False, gpu=True)
+#tts = TTS(model_name=model_name, progress_bar=False, gpu=True)
+tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=False, gpu=True)
 
 customtkinter.set_appearance_mode("dark")  # Modes: system (default), light, dark
 customtkinter.set_default_color_theme("dark-blue")  # Themes: blue (default), dark-blue, green
@@ -59,7 +59,7 @@ for folder in folders:
 
 # Possible Mic - Run when you run the programm the first time to select the right microphone
 available_mics = sr.Microphone.list_microphone_names()
-
+print(available_mics)
 # 2 for home computer, 1 for uni computer
 mic_index = 1
 
@@ -137,7 +137,7 @@ class App(customtkinter.CTk):
 
     def stop_event(self):
         self.stop = 1
-        stop_listening_event.set()
+
         self.progressbar_talking.stop()
         self.talk_button.configure(text="Talk to the Virtual Assistant")
         stop_listening(wait_for_stop=False)
@@ -148,15 +148,14 @@ class App(customtkinter.CTk):
     def prior_conversations_event(self,):
         id_conv = 2
         text_queue = 2
-        text_answer = chatbot.chat(f"This was our prior conversation: {prior_conversation}")
+        #text_answer = chatbot.chat(f"This was our prior conversation: {prior_conversation}")
 
-        conversation_list.append(text_queue + text_answer)
-        if id_conv == 2:
-            conversation = ' '.join(conversation_list)
-            text_answer = chatbot.chat(f'Summarize this text: {text_queue}')
-
-            with open("conversation_summary.txt", "w") as f:
-                f.write(text_answer)
+        #conversation_list.append(text_queue + text_answer)
+        #if id_conv == 2:
+        #    conversation = ' '.join(conversation_list)
+        #   text_answer = chatbot.chat(f'Summarize this text: {text_queue}')#
+        #    with open("conversation_summary.txt", "w") as f:
+        #        f.write(text_answer)
 
     def submit_event(self):
         self.progress_questions += 1
@@ -176,6 +175,7 @@ class App(customtkinter.CTk):
         self.conversation_tracker = []
         self.talking_counter = 0
         self.entry.configure(placeholder_text="Type your answer here")
+        self.entry.configure(textvariable="Type your answer here")
 
     def back_event(self):
         self.progress_questions -= 1
@@ -189,88 +189,104 @@ class App(customtkinter.CTk):
         sd.play(data, fs)
 
     def display_text(self):
-        print('Displaying Text...')
-        test1 = []
+        #self.textbox_SR.delete("0.0", "end")
         while not self.transcription_completed:
             text = text_queue.get()
-            display_t = 'You: ' + ' '.join(text)
+            display_t = ' '.join(text)
             print(f"Text: {display_t}")
-            self.textbox_SR.delete("0.0", "end")
             self.textbox_SR.insert("end", text=display_t)
             sleep(0.1)
+
         self.textbox_SR.insert("end", text='\n')
 
     def display_response(self):
         self.textbox.delete("0.0", "end")
-        display_t = 'Voice Assistant: ' + self.text_answer
+        display_t = self.text_answer
+        self.textbox.insert("end", text="Voice Assistant: ")
+        print(display_t)
         for character in display_t:
             self.textbox.insert("end", text=character)
             time.sleep(0.03)
 
+    def play_audio(self):
+        fs = 16000
+        tts.tts_to_file(self.text_answer, speaker_wav="SilasVoice.wav", language="en", file_path="output.wav")
+        #data = tts.tts(text=self.text_answer)
+        data, fs = sf.read("output.wav")
+        sd.play(data, fs)
+
+    # Interjection mmmmm...     for Ehhhm
+
     def recognition_and_answering(self):
 
-        self.textbox_SR.configure(state="normal")
+        #self.textbox_SR.configure(state="normal")
 
-        if self.conversation_number > 1:
+        if self.mode != "Study":
+
+            self.textbox_SR.configure(state="normal")
             self.textbox_SR = customtkinter.CTkTextbox(self.conversation, wrap="word", height=60, width=600)
-            self.textbox_SR.insert("0.0", "You: ...")
-            self.textbox_SR.grid(row=(2 * self.conversation_number), column=0, padx=(20, 20), pady=(10, 10), sticky="e")
+            #self.textbox_SR.configure(state="normal")
+            self.textbox_SR.grid(row=(2 + 2 * self.conversation_number), column=0, padx=(20, 20), pady=(10, 10), sticky="e")
+            self.textbox_SR.insert("0.0", "You: ")
+
         self.recognize()
 
         self.transcription_completed = True
+        #self.conversation_number += 1
 
         if self.transcription == '':
             self.text_answer = 'It seems like you did not say anything yet, if you are ready to talk press the talk - button again.'
         else:
-            self.text_answer = chatbot.chat(self.transcription)
+            try:
+                self.text_answer = chatbot.chat(self.transcription)
+            except:
+                raise Warning("self.transcription is empty")
 
-        self.textbox = customtkinter.CTkTextbox(self.conversation, wrap="word", height=60, width=600)
-        self.textbox.configure(state="normal")
-        self.textbox.insert("0.0", "Voice Assistant: ...")
-        self.textbox.grid(row=(2 + 2 * self.conversation_number), column=0, padx=(20, 20), pady=(10, 10), sticky="w")
+        if self.mode != "Study":
+            self.textbox = customtkinter.CTkTextbox(self.conversation, wrap="word", height=60, width=600)
+            self.textbox.configure(state="normal")
+            self.textbox.grid(row=(3 + 2 * self.conversation_number), column=0, padx=(20, 20), pady=(10, 10), sticky="w")
+            self.textbox.insert("0.0", "Voice Assistant: ...")
+            self.conversation_number += 1
 
-        threading.Thread(target=self.display_response).start()
+        responding_thread = threading.Thread(target=self.display_response)
+        responding_thread.start()
         print(f'This is my answer: {self.transcription}')
 
-        filename = os.path.join(recording_folder, f"output_response_{self.subject_id}_{self.talking_counter}.wav")
+        self.filename = os.path.join(recording_folder, f"output_response_{self.subject_id}_{self.talking_counter}.wav")
 
-        tts.tts_to_file(text=self.text_answer, file_path=filename)
-        data, fs = sf.read(filename, dtype='float32')
-        sd.play(data, fs)
+        playing_thread = threading.Thread(target=self.play_audio)
+        playing_thread.start()
 
         self.conversation_tracker.append(self.text_queue)
         self.conversation_tracker.append(self.text_answer)
 
-        self.textbox_SR.configure(state="disable")
-        self.textbox.configure(state="disable")
         self.progressbar_talking.stop()
         self.talk_button.configure(text="Talk to the Virtual Assistant")
         self.talk_button.configure(state="normal")
         self.talking_counter += 1
         self.transcription = []
 
-        self.conversation_number += 1
-
     def recording_event(self):
 
         self.talk_button.configure(state="disabled")
         self.talk_button.configure(text="Listening...")
+        self.transcription_completed = False
 
         if self.mode == "Study":
             self.progressbar_talking.grid(row=0, column=1, columnspan=1, padx=(20, 10), pady=(10, 10), sticky="ew")
 
         else:
             self.progressbar_talking.grid(row=0, column=0, padx=(20, 10), pady=(10, 10), sticky="ew")
+
         self.progressbar_talking.start()
 
         threading.Thread(target=self.display_text).start()
-        recognition_thread = threading.Thread(target=self.recognition_and_answering)
-        recognition_thread.start()
-
-        #stop_listening(wait_for_stop=False)
+        self.recognition_process = threading.Thread(target=self.recognition_and_answering)
+        self.recognition_process.start()
 
     def recognize(self):
-        test_mode = True
+        test_mode = False
         if test_mode:
             audio_data = whisper.load_audio(os.path.join("Output Recordings", "output0.wav"))
             audio = whisper.pad_or_trim(audio_data.astype(np.float32))
@@ -321,7 +337,7 @@ class App(customtkinter.CTk):
                     audio_data = sr.AudioData(self.last_sample, source.SAMPLE_RATE, source.SAMPLE_WIDTH)
                     audio_data, samplerate = sf.read(io.BytesIO(audio_data.get_wav_data()))
 
-                    audio_data = whisper.load_audio('output0.wav')
+                    #audio_data = whisper.load_audio('output0.wav')
                     audio = whisper.pad_or_trim(audio_data.astype(np.float32))
                     # make log-Mel spectrogram and move to the same device as the model
                     mel = whisper.log_mel_spectrogram(audio).to(model.device)
@@ -342,7 +358,7 @@ class App(customtkinter.CTk):
 
                     # If we detected a pause between recordings, add a new item to our transcription.
                     text_queue.put(words)
-                    self.transcription = words
+                    self.transcription = result.text
                 if now - start_timer > timedelta(seconds=4):
                     recognition_complete = True
 
@@ -369,7 +385,7 @@ class App(customtkinter.CTk):
         # Answer Speech Text Box
         #self.textbox = customtkinter.CTkTextbox(conversation, wrap="word", height=50, width=350)
         # Recognized Speech Text Box
-        self.textbox_SR = customtkinter.CTkTextbox(self.conversation, wrap="word",height=60, width=600)
+        self.textbox_SR = customtkinter.CTkTextbox(self.conversation, wrap="word", height=60, width=600)
         #self.textbox.insert("0.0", "Voice Assistant: ...")
         self.textbox_SR.insert("0.0", "You: ...")
         self.textbox_SR.configure(state="disabled")
@@ -400,10 +416,9 @@ class App(customtkinter.CTk):
         #voicelabel.grid(row=0, column=1, columnspan=2, padx=20, pady=(10, 10), sticky='w')
 
         # Stop Button
-        stop_button = customtkinter.CTkButton(text="Stop", master=frame, fg_color="red", border_width=2,
+        stop_button = customtkinter.CTkButton(text="Stop", master=frame, fg_color="red", width=50, border_width=2,
                                               command=self.stop_event)
-
-        stop_button.place(relx=1, rely=1)
+        stop_button.grid(padx=(20, 20), pady=(20, 20), sticky="sew")
 
         # Grid Layout
         #self.progressbar_talking.grid(row=0, column=1, columnspan=1, padx=(20, 10), pady=(10, 10), sticky="ew")
@@ -417,7 +432,6 @@ class App(customtkinter.CTk):
         #self.entry.grid(row=3, column=0, padx=(20, 20), pady=(10, 10), sticky="nsew")
 
         # set default values
-
 
     def create_study_frame(self):
         App.frames["Talking_Frame"] = customtkinter.CTkFrame(self, corner_radius=0, width=1300, height=1000)
