@@ -1,5 +1,5 @@
-from hugchat import hugchat
-from hugchat.login import Login
+#from hugchat import hugchat
+#from hugchat.login import Login
 import whisper
 import speech_recognition as sr
 from TTS.api import TTS
@@ -19,22 +19,24 @@ import io
 from time import sleep
 import numpy as np
 import random
+import gpt4all
 
+gptj = gpt4all.GPT4All("ggml-gpt4all-j-v1.3-groovy")
 
 questions = pd.read_csv('QuestionSurvey_2.csv')
 starting_question = questions.loc[0]['Question']
 number_questions = len(questions.index)
 
-email = "silas.rech@aalto.fi"
-sign = Login(email, "Pandomac:;14")
-cookies = sign.login()
-sign.saveCookies()
-chatbot = hugchat.ChatBot(cookies=cookies.get_dict())
+#email = "silas.rech@aalto.fi"
+#sign = Login(email, "Pandomac:;14")
+##cookies = sign.login()
+#sign.saveCookies()
+#chatbot = hugchat.ChatBot(cookies=cookies.get_dict())
 
 # Save cookies to usercookies/<email>.json
-sign.saveCookies()
+#sign.saveCookies()
 
-test = chatbot.chat("HI")
+
 model_name = TTS.list_models()[8]
 
 # tts = TTS(model_name=model_name, progress_bar=False, gpu=True)
@@ -64,13 +66,13 @@ for folder in folders:
 available_mics = sr.Microphone.list_microphone_names()
 # print(available_mics)
 # 2 for home computer, 1 for uni computer
-mic_index = 2
+mic_index = 1
 
 # If debugging and logging needed
 debug = False
 
 # Initialize Text-to-Speech
-model = whisper.load_model("base")
+model = whisper.load_model("base.en")
 
 
 # Init Speech Rec
@@ -148,7 +150,6 @@ class App(customtkinter.CTk):
     def prior_conversations_event(self,):
         id_conv = 2
         text_queue = 2
-        text_answer = chatbot.chat(f"This was our prior conversation: {prior_conversation}")
 
         #conversation_list.append(text_queue + text_answer)
         #if id_conv == 2:
@@ -170,8 +171,6 @@ class App(customtkinter.CTk):
             with open(os.path.join(trust_scores_folder, f"TrustScores_{self.subject_id}.txt"), "w") as f:
                 f.write(f"{questions.loc[self.progress_questions]['Question'], self.radio_var.get()}")
 
-        id = chatbot.new_conversation()
-        chatbot.change_conversation(id)
         self.conversation_tracker = []
         self.talking_counter = 0
         self.entry.configure(placeholder_text="Type your answer here")
@@ -185,10 +184,13 @@ class App(customtkinter.CTk):
 
     def interjections_event(self):
         data, fs = sf.read('Mhmm.wav', dtype='float32')
+        data = data * 8
         sd.play(data, fs)
+        test = 1
 
     def display_text(self):
         # self.textbox_SR.delete("0.0", "end")
+        self.textbox_SR.insert("end", text='\n')
         while not self.transcription_completed:
             text = text_queue.get()
             display_t = ' '.join(text)
@@ -212,7 +214,9 @@ class App(customtkinter.CTk):
         tts.tts_to_file(self.text_answer, speaker_wav="SilasVoice.wav", language="en", file_path="output.wav")
         # data = tts.tts(text=self.text_answer)
         data, fs = sf.read("output.wav")
+        data = data*2
         sd.play(data, fs)
+        test = 1
 
     # Interjection mmmmm...     for Ehhhm
 
@@ -231,11 +235,14 @@ class App(customtkinter.CTk):
 
         self.transcription_completed = True
         # self.conversation_number += 1
-
-        if self.transcription == '':
-            self.text_answer = 'It seems like you did not say anything yet, if you are ready to talk press the talk - button again.'
+        self.stop_listening(wait_for_stop=False)
+        if self.transcription == "":
+            self.text_answer = 'It seems like you did not say anything yet, if you are ready to talk press the talk button again.'
         else:
-            self.text_answer = chatbot.chat(self.transcription)
+            messages = [{"role": "user", "content": self.transcription}]
+            response = gptj.chat_completion(messages)["choices"][0]["message"]
+            self.text_answer = response["content"]
+            test = 1
 
         if self.mode != "Study":
             self.textbox = customtkinter.CTkTextbox(self.conversation, wrap="word", height=60, width=600)
@@ -260,9 +267,11 @@ class App(customtkinter.CTk):
         self.talk_button.configure(text="Talk to the Virtual Assistant")
         self.talk_button.configure(state="normal")
         self.talking_counter += 1
-        self.transcription = []
+        self.transcription = ''
 
     def recording_event(self):
+
+        self.stop_listening = recorder.listen_in_background(mic, record_callback, phrase_time_limit=record_timeout)
 
         self.talk_button.configure(state="disabled")
         self.talk_button.configure(text="Listening...")
@@ -282,8 +291,7 @@ class App(customtkinter.CTk):
 
     def recognize(self):
         test_mode = False
-        if not self.stop_listening:
-            self.stop_listening = recorder.listen_in_background(mic, record_callback, phrase_time_limit=record_timeout)
+        #if not self.stop_listening:
 
         if test_mode:
             audio_data = whisper.load_audio(os.path.join("Output Recordings", "output0.wav"))
@@ -346,7 +354,7 @@ class App(customtkinter.CTk):
                     words = result.text.split()
 
                     if result.text[-1] == '.':
-                        if random.random() > 1:
+                        if random.random() > 0.1:
                             threading.Thread(target=self.interjections_event).start()
 
                     #if
@@ -579,7 +587,7 @@ class App(customtkinter.CTk):
         self.starting = True
         self.last_sample = bytes()
         self.transcription_completed = False
-        self.transcription = []
+        self.transcription = ""
         self.subject_id = '0000'
         self.num_of_frames = 2
         self.stop = 0
@@ -612,7 +620,6 @@ if __name__ == '__main__':
     app = App()
     app.resizable(True, True)
     app.mainloop()
-
 
 
 
